@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/thorsager/dude/middleware"
@@ -13,7 +14,12 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 )
+
+const EnvDbPrefix = "DB_"
+const EnvUrlSuffix = "_URL"
 
 type Dude struct {
 	ID     int    `json:"id"`
@@ -22,20 +28,52 @@ type Dude struct {
 }
 
 var handler = middleware.Compose(
-	persistence.Middleware,
+	func(handlerFunc http.HandlerFunc) http.HandlerFunc {
+		return persistence.Middleware(handlerFunc, dbSelector)
+	},
 	requestlogging.Middleware,
 	requestid.Middleware,
 )
 
+func dbSelector(r *http.Request) string {
+	return strings.ToUpper(r.Header.Get("X-DB-Name"))
+}
+
+func readEnvironment() ([]persistence.NamedUrl, error) {
+	var nurls []persistence.NamedUrl
+	for _, envKv := range os.Environ() {
+		if strings.HasPrefix(envKv, EnvDbPrefix) {
+			kv := strings.SplitN(envKv, "=", 2)
+			if !strings.HasSuffix(kv[0], EnvUrlSuffix) {
+				continue
+			}
+			name := strings.TrimPrefix(kv[0], EnvDbPrefix)
+			name = strings.TrimSuffix(name, EnvUrlSuffix)
+			u, err := url.Parse(kv[1])
+			if err != nil {
+				return nurls, err
+			}
+			nurls = append(nurls, persistence.NamedUrl{Name: strings.ToUpper(name), Url: u})
+		}
+	}
+	return nurls, nil
+}
+
 func main() {
-	dbUrl, err := url.Parse("postgres://postgres:changeme@localhost/postgres?sslmode=disable")
+	err := godotenv.Load()
+	if err != nil && !os.IsNotExist(err) {
+		log.Fatal("Error loading .env file")
+	}
+
+	nurls, err := readEnvironment()
 	if err != nil {
 		panic(err)
 	}
-	err = persistence.Setup(dbUrl)
-	if err != nil {
-		panic(err)
 
+	err = persistence.Setup(nurls)
+	if err != nil {
+		persistence.Close()
+		panic(err)
 	}
 	defer persistence.Close()
 

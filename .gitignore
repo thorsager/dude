@@ -1,4 +1,5 @@
 ### Stuff
+.env
 .idea
 *.iws
 *.ipr
