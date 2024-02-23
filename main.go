@@ -1,10 +1,15 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/thorsager/dude/middleware"
 	"github.com/thorsager/dude/persistence"
+	"github.com/thorsager/dude/requestid"
+	"github.com/thorsager/dude/requestlogging"
 	"log"
 	"net/http"
 	"net/url"
@@ -16,13 +21,11 @@ type Dude struct {
 	Phrase string `json:"phrase"`
 }
 
-func dbInjector(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		ctx = persistence.WithConnection(ctx)
-		next(w, r.WithContext(ctx))
-	}
-}
+var handler = middleware.Compose(
+	persistence.Middleware,
+	requestlogging.Middleware,
+	requestid.Middleware,
+)
 
 func main() {
 	dbUrl, err := url.Parse("postgres://postgres:changeme@localhost/postgres?sslmode=disable")
@@ -39,11 +42,11 @@ func main() {
 	// Register the metrics handler
 	http.Handle("/metrics", promhttp.Handler())
 
-	http.HandleFunc("POST /dude", dbInjector(createDude))
-	http.HandleFunc("GET /dude", dbInjector(getAllDudes))
-	http.HandleFunc("GET /dude/{id}", dbInjector(getDudeById))
-	http.HandleFunc("PUT /dude", dbInjector(updateDude))
-	http.HandleFunc("DELETE /dude/{id}", dbInjector(deleteDude))
+	http.HandleFunc("POST /dude", handler(createDude))
+	http.HandleFunc("GET /dude", handler(getAllDudes))
+	http.HandleFunc("GET /dude/{id}", handler(getDudeById))
+	http.HandleFunc("PUT /dude", handler(updateDude))
+	http.HandleFunc("DELETE /dude/{id}", handler(deleteDude))
 
 	log.Printf("Server starting on port 8080")
 	err = http.ListenAndServe(":8080", nil)
@@ -66,10 +69,11 @@ func createDude(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db := persistence.GetConnection(r.Context())
+	ctx := r.Context()
+	db := persistence.GetConnection(ctx)
 
 	id := 0
-	err = db.QueryRow("INSERT INTO dudes (name, phrase) VALUES ($1, $2) RETURNING id", d.Name, d.Phrase).Scan(&id)
+	err = db.QueryRowContext(ctx, "INSERT INTO dudes (name, phrase) VALUES ($1, $2) RETURNING id", d.Name, d.Phrase).Scan(&id)
 	if err != nil {
 		log.Printf("could not execute statement: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -87,12 +91,16 @@ func createDude(w http.ResponseWriter, r *http.Request) {
 
 func getDudeById(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-
-	db := persistence.GetConnection(r.Context())
+	ctx := r.Context()
+	db := persistence.GetConnection(ctx)
 	var d Dude
-	row := db.QueryRow("SELECT id, name, phrase FROM dudes WHERE id = $1", id)
+	row := db.QueryRowContext(ctx, "SELECT id, name, phrase FROM dudes WHERE id = $1", id)
 	err := row.Scan(&d.ID, &d.Name, &d.Phrase)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -104,9 +112,14 @@ func getDudeById(w http.ResponseWriter, r *http.Request) {
 }
 
 func getAllDudes(w http.ResponseWriter, r *http.Request) {
-	db := persistence.GetConnection(r.Context())
-	rows, err := db.Query("SELECT id, name, phrase FROM dudes ORDER BY id")
+	ctx := r.Context()
+	db := persistence.GetConnection(ctx)
+	rows, err := db.QueryContext(ctx, "SELECT id, name, phrase FROM dudes ORDER BY id")
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -130,6 +143,7 @@ func getAllDudes(w http.ResponseWriter, r *http.Request) {
 }
 
 func updateDude(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var d Dude
 	err := json.NewDecoder(r.Body).Decode(&d)
 	if err != nil {
@@ -137,10 +151,14 @@ func updateDude(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	db := persistence.GetConnection(r.Context())
+	db := persistence.GetConnection(ctx)
 
-	result, err := db.Exec("UPDATE dudes SET name=$2, phrase=$3 WHERE id = $1", d.ID, d.Name, d.Phrase)
+	result, err := db.ExecContext(ctx, "UPDATE dudes SET name=$2, phrase=$3 WHERE id = $1", d.ID, d.Name, d.Phrase)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -157,10 +175,15 @@ func updateDude(w http.ResponseWriter, r *http.Request) {
 }
 
 func deleteDude(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	id := r.PathValue("id")
-	db := persistence.GetConnection(r.Context())
-	result, err := db.Exec("DELETE FROM dudes WHERE id = $1", id)
+	db := persistence.GetConnection(ctx)
+	result, err := db.ExecContext(ctx, "DELETE FROM dudes WHERE id = $1", id)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"github.com/dlmiddlecote/sqlstats"
 	"github.com/prometheus/client_golang/prometheus"
+	"net/http"
 	"net/url"
 )
 
 var db *sql.DB
 
-type dbKeyType int // key for the context value
-const dbKey dbKeyType = 0
+type dbKey struct{} // key for the context value
 
 func Setup(dbUrl *url.URL) error {
 	var err error
@@ -33,15 +33,22 @@ func Setup(dbUrl *url.URL) error {
 }
 
 func WithConnection(ctx context.Context) context.Context {
-	return context.WithValue(ctx, dbKey, db)
+	return context.WithValue(ctx, dbKey{}, db)
 }
 
 func GetConnection(ctx context.Context) *sql.DB {
-	return ctx.Value(dbKey).(*sql.DB)
+	return ctx.Value(dbKey{}).(*sql.DB)
 }
 
 func Close() {
 	if db != nil {
 		_ = db.Close()
+	}
+}
+
+func Middleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := WithConnection(r.Context())
+		next(w, r.WithContext(ctx))
 	}
 }
