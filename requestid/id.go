@@ -2,17 +2,18 @@ package requestid
 
 import (
 	"context"
-	"fmt"
+	"encoding/base64"
+	"github.com/google/uuid"
 	"net/http"
-	"time"
 )
 
 type idKey struct{} // key for the context value
 
 func Middleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		uuid := fmt.Sprintf("%X", time.Now().Unix())
-		next(w, r.WithContext(WithID(r.Context(), uuid)))
+		uid := uuid.Must(uuid.NewUUID()) // generate a new UUID version 1 is fine for this application
+		rqid := base64.RawStdEncoding.EncodeToString(uid[:])
+		next(w, r.WithContext(WithID(r.Context(), rqid)))
 	}
 }
 

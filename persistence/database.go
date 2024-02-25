@@ -26,6 +26,10 @@ var dbMap map[string]*sql.DB
 type dbKey struct{} // key for the context value
 
 func Setup(dbUrls []NamedUrl) error {
+	if len(dbUrls) == 0 {
+		return fmt.Errorf("no databases specified")
+	}
+
 	if dbMap == nil {
 		dbMap = make(map[string]*sql.DB)
 	}

@@ -7,10 +7,10 @@ import (
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/thorsager/dude/metricsandlogging"
 	"github.com/thorsager/dude/middleware"
 	"github.com/thorsager/dude/persistence"
 	"github.com/thorsager/dude/requestid"
-	"github.com/thorsager/dude/requestlogging"
 	"log"
 	"net/http"
 	"net/url"
@@ -27,16 +27,21 @@ type Dude struct {
 	Phrase string `json:"phrase"`
 }
 
+var defaultDataBase = ""
+
 var handler = middleware.Compose(
 	func(handlerFunc http.HandlerFunc) http.HandlerFunc {
 		return persistence.Middleware(handlerFunc, dbSelector)
 	},
-	requestlogging.Middleware,
+	metricsandlogging.Middleware,
 	requestid.Middleware,
 )
 
 func dbSelector(r *http.Request) string {
-	return strings.ToUpper(r.Header.Get("X-DB-Name"))
+	if s := r.Header.Get("X-DB-Name"); s != "" {
+		return strings.ToUpper(s)
+	}
+	return defaultDataBase
 }
 
 func readEnvironment() ([]persistence.NamedUrl, error) {
@@ -76,6 +81,11 @@ func main() {
 		panic(err)
 	}
 	defer persistence.Close()
+
+	// If only one database is configured, use it as the default
+	if len(nurls) == 1 {
+		defaultDataBase = nurls[0].Name
+	}
 
 	// Register the metrics handler
 	http.Handle("/metrics", promhttp.Handler())
@@ -201,10 +211,8 @@ func updateDude(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	affected, err := result.RowsAffected()
-	if err == nil {
-		log.Printf("updated %d dudes", affected)
-	} else {
+	_, err = result.RowsAffected()
+	if err != nil {
 		log.Printf("could not determine rows affected: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
