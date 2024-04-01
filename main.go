@@ -25,10 +25,8 @@ const EnvUrlSuffix = "_URL"
 var defaultDataBase = ""
 var BindAddress = ":8080"
 
-var handler = middleware.Compose(
-	func(handlerFunc http.HandlerFunc) http.HandlerFunc {
-		return persistence.Middleware(handlerFunc, dbSelector)
-	},
+var middleWareHandler = middleware.Compose(
+	persistence.Middleware(dbSelector),
 	metricsandlogging.Middleware,
 	requestid.Middleware,
 )
@@ -92,16 +90,16 @@ func main() {
 	// Register the metrics handler
 	serveMux.Handle("/metrics", promhttp.Handler())
 
-	serveMux.HandleFunc("POST /dude", handler(dude.Create))
-	serveMux.HandleFunc("GET /dude", handler(dude.GetAll))
-	serveMux.HandleFunc("GET /dude/{id}", handler(dude.GetById))
-	serveMux.HandleFunc("PUT /dude", handler(dude.Update))
-	serveMux.HandleFunc("DELETE /dude/{id}", handler(dude.Delete))
+	serveMux.HandleFunc("POST /dude", dude.Create)
+	serveMux.HandleFunc("GET /dude", dude.GetAll)
+	serveMux.HandleFunc("GET /dude/{id}", dude.GetById)
+	serveMux.HandleFunc("PUT /dude", dude.Update)
+	serveMux.HandleFunc("DELETE /dude/{id}", dude.Delete)
 
 	srv := &http.Server{
 		Addr:        BindAddress,
 		BaseContext: func(_ net.Listener) context.Context { return ctx },
-		Handler:     serveMux,
+		Handler:     middleWareHandler(serveMux),
 	}
 
 	// Start the server

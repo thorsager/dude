@@ -21,6 +21,7 @@ const ParamPoolSize = paramPrefix + "poolSize"
 
 type SelectorFunc func(r *http.Request) string
 
+var onlyDb *sql.DB
 var dbMap map[string]*sql.DB
 
 type dbKey struct{} // key for the context value
@@ -31,7 +32,7 @@ func Setup(dbUrls []NamedUrl) error {
 	}
 
 	if dbMap == nil {
-		dbMap = make(map[string]*sql.DB)
+		dbMap = make(map[string]*sql.DB, len(dbUrls))
 	}
 
 	for _, nu := range dbUrls {
@@ -41,28 +42,39 @@ func Setup(dbUrls []NamedUrl) error {
 		if _, ok := dbMap[nu.Name]; ok {
 			return fmt.Errorf("database with name %s already exists", nu.Name)
 		}
-		var err error
-		var db *sql.DB
-
-		poolSize := getQueryParamAsInt(nu.Url, ParamPoolSize, 10)
-		nu.Url = stripXQueryParam(nu.Url)
-
-		db, err = sql.Open(nu.Url.Scheme, nu.Url.String())
+		db, err := createAndConfigurePool(nu)
 		if err != nil {
-			return fmt.Errorf("could not connect to db: %v", err)
+			return err
 		}
-		if err = db.Ping(); err != nil {
-			return fmt.Errorf("could not ping db: %v", err)
-		}
-
-		db.SetMaxOpenConns(poolSize)
-
-		collector := sqlstats.NewStatsCollector(nu.Name, db)
-		prometheus.MustRegister(collector)
-
 		dbMap[nu.Name] = db
 	}
+
+	if len(dbMap) == 1 {
+		onlyDb = dbMap[dbUrls[0].Name] // select first and only db
+	} else {
+		onlyDb = nil // if Setup() is called multiple times, onlyDb is nil
+	}
+
 	return nil
+}
+
+func createAndConfigurePool(nu NamedUrl) (*sql.DB, error) {
+	poolSize := getQueryParamAsInt(nu.Url, ParamPoolSize, 10)
+	nu.Url = stripXQueryParam(nu.Url)
+
+	db, err := sql.Open(nu.Url.Scheme, nu.Url.String())
+	if err != nil {
+		return nil, fmt.Errorf("could not connect to db: %v", err)
+	}
+	if err = db.Ping(); err != nil {
+		return nil, fmt.Errorf("could not ping db: %v", err)
+	}
+
+	db.SetMaxOpenConns(poolSize)
+
+	collector := sqlstats.NewStatsCollector(nu.Name, db)
+	prometheus.MustRegister(collector)
+	return db, nil
 }
 
 func getQueryParamAsInt(u *url.URL, key string, defaultValue int) int {
@@ -85,6 +97,10 @@ func stripXQueryParam(u *url.URL) *url.URL {
 }
 
 func WithConnection(ctx context.Context, dbName string) (context.Context, error) {
+	if onlyDb != nil {
+		return context.WithValue(ctx, dbKey{}, onlyDb), nil
+	}
+
 	if db, ok := dbMap[dbName]; !ok {
 		return nil, fmt.Errorf("database with name %s does not exist", dbName)
 	} else {
@@ -104,18 +120,20 @@ func Close() {
 	}
 }
 
-func Middleware(next http.HandlerFunc, selector SelectorFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		dbName := selector(r)
-		if dbName == "" {
-			http.Error(w, "no database specified", http.StatusBadRequest)
-			return
-		}
-		ctx, err := WithConnection(r.Context(), dbName)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		next(w, r.WithContext(ctx))
+func Middleware(selector SelectorFunc) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			dbName := selector(r)
+			if dbName == "" {
+				http.Error(w, "no database specified", http.StatusBadRequest)
+				return
+			}
+			ctx, err := WithConnection(r.Context(), dbName)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
 	}
 }

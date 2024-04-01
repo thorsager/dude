@@ -9,12 +9,12 @@ import (
 
 type idKey struct{} // key for the context value
 
-func Middleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		uid := uuid.Must(uuid.NewUUID()) // generate a new UUID version 1 is fine for this application
 		rqid := base64.RawStdEncoding.EncodeToString(uid[:])
-		next(w, r.WithContext(WithID(r.Context(), rqid)))
-	}
+		next.ServeHTTP(w, r.WithContext(WithID(r.Context(), rqid)))
+	})
 }
 
 func WithID(ctx context.Context, id string) context.Context {

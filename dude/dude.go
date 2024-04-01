@@ -88,7 +88,7 @@ func GetAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var alldudes []Dude
+	var alldudes = make([]Dude, 0)
 	for rows.Next() {
 		var d Dude
 		err := rows.Scan(&d.ID, &d.Name, &d.Phrase)

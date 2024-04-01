@@ -42,11 +42,11 @@ func (w *writerWrapper) WriteHeader(statusCode int) {
 	w.statusCode = statusCode
 }
 
-func Middleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		ww := &writerWrapper{actual: w, statusCode: 200}
-		next(ww, r)
+		next.ServeHTTP(ww, r)
 		duration := time.Since(start)
 
 		log.Printf("[%s] %s - \"%s %s %s\" %d %d %s %s (%s)",
@@ -63,7 +63,7 @@ func Middleware(next http.HandlerFunc) http.HandlerFunc {
 		)
 		httpDuration.WithLabelValues(r.URL.Path).Observe(duration.Seconds())
 		httpRequestsTotal.WithLabelValues(r.URL.Path, r.Method, http.StatusText(ww.statusCode)).Inc()
-	}
+	})
 }
 
 func ipFromRemoteAddr(s string) string {
