@@ -7,17 +7,7 @@ import (
 	"github.com/dlmiddlecote/sqlstats"
 	"github.com/prometheus/client_golang/prometheus"
 	"net/http"
-	"net/url"
-	"strings"
 )
-
-type NamedUrl struct {
-	Name string
-	Url  *url.URL
-}
-
-const paramPrefix = "_x-"
-const ParamPoolSize = paramPrefix + "poolSize"
 
 type SelectorFunc func(r *http.Request) string
 
@@ -42,6 +32,10 @@ func Setup(dbUrls []NamedUrl) error {
 		if _, ok := dbMap[nu.Name]; ok {
 			return fmt.Errorf("database with name %s already exists", nu.Name)
 		}
+		err := Migrate(nu.StrippedUrl().String())
+		if err != nil {
+			return fmt.Errorf("could not migrate db: %v", err)
+		}
 		db, err := createAndConfigurePool(nu)
 		if err != nil {
 			return err
@@ -59,10 +53,10 @@ func Setup(dbUrls []NamedUrl) error {
 }
 
 func createAndConfigurePool(nu NamedUrl) (*sql.DB, error) {
+	// handle custom _x- prefixed parameters
 	poolSize := getQueryParamAsInt(nu.Url, ParamPoolSize, 10)
-	nu.Url = stripXQueryParam(nu.Url)
 
-	db, err := sql.Open(nu.Url.Scheme, nu.Url.String())
+	db, err := sql.Open(nu.Url.Scheme, nu.StrippedUrl().String())
 	if err != nil {
 		return nil, fmt.Errorf("could not connect to db: %v", err)
 	}
@@ -75,25 +69,6 @@ func createAndConfigurePool(nu NamedUrl) (*sql.DB, error) {
 	collector := sqlstats.NewStatsCollector(nu.Name, db)
 	prometheus.MustRegister(collector)
 	return db, nil
-}
-
-func getQueryParamAsInt(u *url.URL, key string, defaultValue int) int {
-	if v := u.Query().Get(key); v != "" {
-		return defaultValue
-	}
-	return defaultValue
-}
-
-func stripXQueryParam(u *url.URL) *url.URL {
-	q := u.Query()
-	for k := range q {
-		if strings.HasPrefix(k, paramPrefix) {
-			q.Del(k)
-		}
-
-	}
-	u.RawQuery = q.Encode()
-	return u
 }
 
 func WithConnection(ctx context.Context, dbName string) (context.Context, error) {
