@@ -26,11 +26,6 @@ func Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err != nil {
-		log.Printf("[%s] could not prepare statement: %v", rid, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 
 	db := persistence.GetConnection(ctx)
 
