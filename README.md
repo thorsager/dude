@@ -9,12 +9,8 @@ DB_DEFAULT_URL=postgres://postgres:changeme@localhost/postgres?sslmode=disable&_
 ```
 
 ## table layout
-```sql
-CREATE TABLE IF NOT EXISTS dude (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL
-)
-```                         
+Tables created on startup for detail on layout refer to [1_initial.up.sql](persistence/migrations/1_initial.up.sql)
+
 
 # Usage
 ```bash
