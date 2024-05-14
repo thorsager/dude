@@ -2,6 +2,15 @@ package main
 
 import (
 	"context"
+	"flag"
+	"log"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"os/signal"
+	"strings"
+
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -10,20 +19,13 @@ import (
 	"github.com/thorsager/dude/middleware"
 	"github.com/thorsager/dude/persistence"
 	"github.com/thorsager/dude/requestid"
-	"log"
-	"net"
-	"net/http"
-	"net/url"
-	"os"
-	"os/signal"
-	"strings"
 )
 
 const EnvDbPrefix = "DB_"
 const EnvUrlSuffix = "_URL"
 
 var defaultDataBase = ""
-var BindAddress = ":8080"
+var BindAddress = ":7070"
 
 var middleWareHandler = middleware.Compose(
 	persistence.Middleware(dbSelector),
@@ -59,6 +61,9 @@ func readEnvironment() ([]persistence.NamedUrl, error) {
 }
 
 func main() {
+	flag.StringVar(&BindAddress, "addr", ":8080", "Bind Address")
+	flag.Parse()
+
 	// handle SIGINT
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()

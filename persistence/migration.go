@@ -3,6 +3,7 @@ package persistence
 import (
 	"embed"
 	"fmt"
+
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
@@ -30,7 +31,7 @@ func Migrate(dbUrl string) error {
 	defer m.Close()
 
 	err = m.Up() // or m.Site
-	if err != nil {
+	if err != nil && err != migrate.ErrNoChange {
 		return err
 	}
 	return nil
