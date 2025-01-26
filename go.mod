@@ -1,6 +1,6 @@
 module github.com/thorsager/dude
 
-go 1.22.0
+go 1.23.0
 
 require (
 	github.com/dlmiddlecote/sqlstats v1.0.2

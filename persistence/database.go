@@ -71,7 +71,7 @@ func createAndConfigurePool(nu NamedUrl) (*sql.DB, error) {
 	return db, nil
 }
 
-func WithConnection(ctx context.Context, dbName string) (context.Context, error) {
+func withConnection(ctx context.Context, dbName string) (context.Context, error) {
 	if onlyDb != nil {
 		return context.WithValue(ctx, dbKey{}, onlyDb), nil
 	}
@@ -103,7 +103,7 @@ func Middleware(selector SelectorFunc) func(http.Handler) http.Handler {
 				http.Error(w, "no database specified", http.StatusBadRequest)
 				return
 			}
-			ctx, err := WithConnection(r.Context(), dbName)
+			ctx, err := withConnection(r.Context(), dbName)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return

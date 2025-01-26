@@ -4,10 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/thorsager/dude/persistence"
-	"github.com/thorsager/dude/requestid"
 	"log"
 	"net/http"
+
+	"github.com/thorsager/dude/persistence"
+	"github.com/thorsager/dude/requestid"
 )
 
 type Dude struct {

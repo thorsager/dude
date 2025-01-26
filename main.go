@@ -27,9 +27,13 @@ const EnvUrlSuffix = "_URL"
 var defaultDataBase = ""
 var BindAddress = ":7070"
 
+// Please nothe that the metricsandlogging.Middleware uses the Go 1.23
+// http.Requst.Pattern value to identify metrics, to ensure this works
+// be ware of usint request.WithContext, as this creates a shallow copy
+// of the http.Request
 var middleWareHandler = middleware.Compose(
-	persistence.Middleware(dbSelector),
 	metricsandlogging.Middleware,
+	persistence.Middleware(dbSelector),
 	requestid.Middleware,
 )
 

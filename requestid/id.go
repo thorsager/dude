@@ -13,11 +13,11 @@ func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		uid := uuid.Must(uuid.NewUUID()) // generate a new UUID version 1 is fine for this application
 		rqid := base64.RawStdEncoding.EncodeToString(uid[:])
-		next.ServeHTTP(w, r.WithContext(WithID(r.Context(), rqid)))
+		next.ServeHTTP(w, r.WithContext(withID(r.Context(), rqid)))
 	})
 }
 
-func WithID(ctx context.Context, id string) context.Context {
+func withID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, idKey{}, id)
 }
 
